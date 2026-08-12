@@ -1,0 +1,133 @@
+name: Main Foodgram workflow
+
+on:
+  push:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Установка Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.12
+    - name: Установка зависимостей
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8==7.3.0
+        pip install -r ./backend/requirements.txt
+    - name: Проверка кода
+      run: |
+        python -m flake8 backend/
+
+  build_and_push_backend:
+    name: Сборка и публикация образа бэкенда
+    runs-on: ubuntu-latest
+    needs: tests
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Клонирование репозитория
+        uses: actions/checkout@v3
+      - name: Настройка Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Авторизация в Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Публикация образа в Docker Hub
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend/
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/foodgram_backend:latest
+
+  build_and_push_frontend:
+    name: Сборка и публикация образа фронтенда
+    runs-on: ubuntu-latest
+    needs: tests
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Клонирование репозитория
+        uses: actions/checkout@v3
+      - name: Настройка Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Авторизация в Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Публикация образа в Docker Hub
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend/
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/foodgram_frontend:latest
+
+  build_and_push_gateway:
+    name: Сборка и публикация образа gateway
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Клонирование репозитория
+        uses: actions/checkout@v3
+      - name: Настройка Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Авторизация в Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Публикация образа в Docker Hub
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./nginx/Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/foodgram_gateway:latest
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs:
+      - build_and_push_backend
+      - build_and_push_frontend
+      - build_and_push_gateway
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Клонирование репозитория
+        uses: actions/checkout@v3
+      - name: Копирование docker-compose на сервер
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "docker-compose.production.yml"
+          target: "foodgram"
+      - name: Деплой на сервер через SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd foodgram
+            sudo docker-compose -f docker-compose.production.yml pull
+            sudo docker-compose -f docker-compose.production.yml down
+            sudo docker-compose -f docker-compose.production.yml up -d
+            sudo docker-compose -f docker-compose.production.yml exec -T backend python manage.py migrate
+            sudo docker-compose -f docker-compose.production.yml exec -T backend python manage.py collectstatic
+            sudo docker-compose -f docker-compose.production.yml exec -T backend cp -r /app/collected_static/. /backend_static/static/
+
+  send_message:
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - name: Отправка сообщения в Telegram
+      uses: appleboy/telegram-action@master
+      with:
+        to: ${{ secrets.TELEGRAM_TO }}
+        token: ${{ secrets.TELEGRAM_TOKEN }}
+        message: Деплой Foodgram успешно выполнен!
