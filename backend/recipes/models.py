@@ -2,11 +2,11 @@ from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
 
-TAG_NAME_MAX_LENGTH = 32
-TAG_SLUG_MAX_LENGTH = 32
-INGREDIENT_NAME_MAX_LENGTH = 128
-MEASUREMENT_UNIT_MAX_LENGTH = 64
-RECIPE_NAME_MAX_LENGTH = 256
+from .constants import (
+    INGREDIENT_NAME_MAX_LENGTH, MEASUREMENT_UNIT_MAX_LENGTH,
+    MIN_COOKING_TIME, MIN_INGREDIENT_AMOUNT, RECIPE_NAME_MAX_LENGTH,
+    TAG_NAME_MAX_LENGTH, TAG_SLUG_MAX_LENGTH,
+)
 
 
 class Tag(models.Model):
@@ -70,7 +70,7 @@ class Recipe(models.Model):
     )
     cooking_time = models.PositiveSmallIntegerField(
         'Время приготовления (в минутах)',
-        validators=[MinValueValidator(1)],
+        validators=[MinValueValidator(MIN_COOKING_TIME)],
     )
     pub_date = models.DateTimeField('Дата публикации', auto_now_add=True)
 
@@ -97,7 +97,7 @@ class RecipeIngredient(models.Model):
         verbose_name='Ингредиент',
     )
     amount = models.PositiveSmallIntegerField(
-        'Количество', validators=[MinValueValidator(1)],
+        'Количество', validators=[MinValueValidator(MIN_INGREDIENT_AMOUNT)],
     )
 
     class Meta:

@@ -5,13 +5,14 @@ from django.core.management.base import BaseCommand
 
 from recipes.models import Ingredient
 
+INGREDIENTS_FILE_PATH = settings.BASE_DIR / 'data' / 'ingredients.json'
+
 
 class Command(BaseCommand):
     help = 'Загружает список ингредиентов из data/ingredients.json.'
 
     def handle(self, *args, **options):
-        path = settings.BASE_DIR / 'data' / 'ingredients.json'
-        with open(path, encoding='utf-8') as file:
+        with open(INGREDIENTS_FILE_PATH, encoding='utf-8') as file:
             data = json.load(file)
 
         ingredients = [Ingredient(**item) for item in data]

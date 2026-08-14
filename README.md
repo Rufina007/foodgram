@@ -6,6 +6,8 @@
 
 Проект доступен по адресу: [rufina-foodgram.duckdns.org](https://rufina-foodgram.duckdns.org)
 
+Документация API: [rufina-foodgram.duckdns.org/api/docs/](https://rufina-foodgram.duckdns.org/api/docs/)
+
 # Технологии
 
 - Python
@@ -77,4 +79,4 @@ python manage.py runserver
 
 # Автор
 
-Rufina007
+[Rufina007](https://github.com/Rufina007)

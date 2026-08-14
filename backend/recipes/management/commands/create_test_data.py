@@ -1,6 +1,8 @@
 import io
+import json
 import random
 
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
@@ -9,66 +11,27 @@ from PIL import Image
 from recipes.models import Ingredient, Recipe, RecipeIngredient, Tag
 from users.models import User
 
-DEMO_USERS = (
-    {
-        'username': 'demo_anna',
-        'email': 'demo.anna@foodgram.example',
-        'first_name': 'Анна',
-        'last_name': 'Демидова',
-        'password': 'DemoPass123',
-    },
-    {
-        'username': 'demo_igor',
-        'email': 'demo.igor@foodgram.example',
-        'first_name': 'Игорь',
-        'last_name': 'Сорокин',
-        'password': 'DemoPass123',
-    },
-    {
-        'username': 'demo_olga',
-        'email': 'demo.olga@foodgram.example',
-        'first_name': 'Ольга',
-        'last_name': 'Куликова',
-        'password': 'DemoPass123',
-    },
+DEMO_DATA_FILE_PATH = settings.BASE_DIR / 'data' / 'demo_data.json'
+PLACEHOLDER_COLORS = (
+    (239, 108, 0), (67, 160, 71), (30, 136, 229), (142, 36, 170),
+    (0, 151, 167), (216, 27, 96), (93, 64, 55), (97, 97, 97),
 )
-
-DEMO_RECIPES = (
-    {
-        'name': 'Овсянка с ягодами',
-        'text': 'Сварите овсянку на молоке, добавьте свежие ягоды и мёд.',
-        'cooking_time': 15,
-    },
-    {
-        'name': 'Салат с авокадо и креветками',
-        'text': (
-            'Смешайте отварные креветки, нарезанный авокадо, черри и зелень,'
-            ' заправьте оливковым маслом.'
-        ),
-        'cooking_time': 20,
-    },
-    {
-        'name': 'Тыквенный суп-пюре',
-        'text': (
-            'Обжарьте лук, добавьте тыкву и бульон, варите до готовности '
-            'и пробейте блендером.'
-        ),
-        'cooking_time': 40,
-    },
-)
-
-PLACEHOLDER_COLORS = ((239, 108, 0), (67, 160, 71), (30, 136, 229))
+PLACEHOLDER_SIZE = (400, 300)
+RECIPE_TAGS_COUNT = 2
+RECIPE_INGREDIENTS_COUNT = 3
+MIN_DEMO_AMOUNT = 1
+MAX_DEMO_AMOUNT = 500
 
 
 def build_placeholder_image(color, filename):
     buffer = io.BytesIO()
-    Image.new('RGB', (400, 300), color).save(buffer, format='JPEG')
+    Image.new('RGB', PLACEHOLDER_SIZE, color).save(buffer, format='JPEG')
     return ContentFile(buffer.getvalue(), name=filename)
 
 
 class Command(BaseCommand):
     help = (
-        'Создаёт демо-пользователей и по одному рецепту на каждого — '
+        'Создаёт демо-пользователей и рецепты из data/demo_data.json — '
         'для проверки работы проекта на тестовых данных.'
     )
 
@@ -86,7 +49,11 @@ class Command(BaseCommand):
             ))
             return
 
-        for index, user_data in enumerate(DEMO_USERS):
+        with open(DEMO_DATA_FILE_PATH, encoding='utf-8') as file:
+            demo_users = json.load(file)['users']
+
+        image_index = 0
+        for user_data in demo_users:
             user, created = User.objects.get_or_create(
                 username=user_data['username'],
                 defaults={
@@ -99,34 +66,42 @@ class Command(BaseCommand):
                 user.set_password(user_data['password'])
                 user.save()
 
-            recipe_data = DEMO_RECIPES[index % len(DEMO_RECIPES)]
-            if Recipe.objects.filter(
-                author=user, name=recipe_data['name'],
-            ).exists():
-                continue
+            for recipe_data in user_data['recipes']:
+                if Recipe.objects.filter(
+                    author=user, name=recipe_data['name'],
+                ).exists():
+                    continue
 
-            image = build_placeholder_image(
-                PLACEHOLDER_COLORS[index % len(PLACEHOLDER_COLORS)],
-                f'{user.username}.jpg',
-            )
-            recipe = Recipe.objects.create(
-                author=user,
-                image=image,
-                **recipe_data,
-            )
-            recipe.tags.set(random.sample(tags, k=min(2, len(tags))))
-            RecipeIngredient.objects.bulk_create(
-                RecipeIngredient(
-                    recipe=recipe,
-                    ingredient=ingredient,
-                    amount=random.randint(1, 500),
+                image = build_placeholder_image(
+                    PLACEHOLDER_COLORS[image_index % len(PLACEHOLDER_COLORS)],
+                    f'{user.username}_{image_index}.jpg',
                 )
-                for ingredient in random.sample(
-                    ingredients, k=min(3, len(ingredients)),
+                image_index += 1
+                recipe = Recipe.objects.create(
+                    author=user,
+                    image=image,
+                    name=recipe_data['name'],
+                    text=recipe_data['text'],
+                    cooking_time=recipe_data['cooking_time'],
                 )
-            )
+                recipe.tags.set(
+                    random.sample(tags, k=min(RECIPE_TAGS_COUNT, len(tags))),
+                )
+                RecipeIngredient.objects.bulk_create(
+                    RecipeIngredient(
+                        recipe=recipe,
+                        ingredient=ingredient,
+                        amount=random.randint(
+                            MIN_DEMO_AMOUNT, MAX_DEMO_AMOUNT,
+                        ),
+                    )
+                    for ingredient in random.sample(
+                        ingredients,
+                        k=min(RECIPE_INGREDIENTS_COUNT, len(ingredients)),
+                    )
+                )
 
         self.stdout.write(self.style.SUCCESS(
             'Демо-пользователи и рецепты готовы (пароль каждого — '
-            'DemoPass123, задан прямо в этой команде).',
+            'DemoPass123, задан в data/demo_data.json).',
         ))

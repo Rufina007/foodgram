@@ -11,6 +11,9 @@ class FoodgramUserAdmin(UserAdmin):
     )
     search_fields = ('email', 'username')
     list_filter = ('is_staff', 'is_active')
+    fieldsets = UserAdmin.fieldsets + (
+        ('Дополнительно', {'fields': ('avatar',)}),
+    )
 
 
 @admin.register(Subscription)

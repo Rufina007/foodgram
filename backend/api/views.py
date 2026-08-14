@@ -1,7 +1,10 @@
+import io
+
 from django.db.models import Sum
-from django.http import HttpResponse
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404
-from djoser.views import UserViewSet
+from django.urls import reverse
+from djoser.views import UserViewSet as BaseUserViewSet
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import (AllowAny, IsAuthenticated,
@@ -19,6 +22,8 @@ from .serializers import (AvatarSerializer, IngredientSerializer,
                           RecipeWriteSerializer, TagSerializer,
                           UserWithRecipesSerializer)
 from .utils import encode_id
+
+SHOPPING_LIST_FILENAME = 'shopping-list.txt'
 
 
 class TagViewSet(viewsets.ReadOnlyModelViewSet):
@@ -96,18 +101,18 @@ class RecipeViewSet(viewsets.ModelViewSet):
             return self._add_to(ShoppingCart, request, pk)
         return self._remove_from(ShoppingCart, request, pk)
 
-    @action(
-        detail=False, methods=('get',),
-        permission_classes=(IsAuthenticated,),
-    )
-    def download_shopping_cart(self, request):
-        ingredients = (
+    @staticmethod
+    def _get_shopping_cart_ingredients(user):
+        return (
             RecipeIngredient.objects
-            .filter(recipe__shoppingcarts__user=request.user)
+            .filter(recipe__shoppingcarts__user=user)
             .values('ingredient__name', 'ingredient__measurement_unit')
             .annotate(total_amount=Sum('amount'))
             .order_by('ingredient__name')
         )
+
+    @staticmethod
+    def _build_shopping_list_file(ingredients):
         lines = [
             f'{item["ingredient__name"]} '
             f'({item["ingredient__measurement_unit"]}) — '
@@ -115,22 +120,31 @@ class RecipeViewSet(viewsets.ModelViewSet):
             for item in ingredients
         ]
         content = '\n'.join(lines) if lines else 'Список покупок пуст.'
-        response = HttpResponse(content, content_type='text/plain')
-        response['Content-Disposition'] = (
-            'attachment; filename="shopping-list.txt"'
+        return FileResponse(
+            io.BytesIO(content.encode('utf-8')),
+            as_attachment=True,
+            filename=SHOPPING_LIST_FILENAME,
+            content_type='text/plain',
         )
-        return response
+
+    @action(
+        detail=False, methods=('get',),
+        permission_classes=(IsAuthenticated,),
+    )
+    def download_shopping_cart(self, request):
+        ingredients = self._get_shopping_cart_ingredients(request.user)
+        return self._build_shopping_list_file(ingredients)
 
     @action(detail=True, methods=('get',), url_path='get-link')
     def get_link(self, request, pk=None):
         get_object_or_404(Recipe, pk=pk)
-        short_path = f'/s/{encode_id(int(pk))}/'
+        short_path = reverse('short-link', kwargs={'code': encode_id(int(pk))})
         return Response(
             {'short-link': request.build_absolute_uri(short_path)},
         )
 
 
-class CustomUserViewSet(UserViewSet):
+class UserViewSet(BaseUserViewSet):
 
     @action(
         detail=False, methods=('put', 'delete'), url_path='me/avatar',
